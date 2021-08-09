@@ -38,6 +38,7 @@ output application/java
 	"ipaddress" : vars.attributes.ip
 }]]]></http:query-params>
 		</http:request>
+		<set-variable value="#[vars.geocodeResponse.zip]" doc:name="Set GeoCode zip" doc:id="9110c15d-4148-47a0-a6ef-2a084add5950" variableName="geoCodezip"/>
 		<logger level="INFO" doc:name="Logger" doc:id="20009415-85b9-4bac-b246-85a7365df1b9" message="Response from geocode system api: #[vars.geocodeResponse]"/>
 	    <choice doc:name="Choice" doc:id="668064d4-b78a-4da7-9c33-c07c72ac562d" >
 			<when expression="#[vars.geocodeResponse.region != null]">
@@ -45,10 +46,28 @@ output application/java
 				<logger level="INFO" doc:name="Logger" doc:id="a11a031e-0358-4a1a-8465-28519573127e" message="Office location: #[vars.officeLocation]" />
 				<choice doc:name="Choice" doc:id="2760735c-c3bc-4286-b20d-f2c64d3b3562">
 			<when expression='#[vars.officeLocation == "error"]'>
-				<ee:transform doc:name="Transform Message" doc:id="c73d5a76-3196-4095-9a4a-2275e85f356c">
+				<logger level="INFO" doc:name="Logger" doc:id="3f4ef52f-0da8-44da-8566-9c8a0a3124da" message="No office location found. Getting the weather details of current location #[vars.attributes.ip]"/>
+					<http:request method="GET" doc:name="weather-system" doc:id="3809e53b-79de-48ce-8e75-99806b905ca2" config-ref="weatherSystem_HTTPRequestor" path="${weathersystem.path}" sendCorrelationId="ALWAYS" target="weatherResponse">
+		<http:headers><![CDATA[#[output application/java
+---
+{
+	"client_id" : vars.attributes.clientId,
+	"client_secret": vars.attributes.clientSecret
+}]]]></http:headers>
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	"postalcode" : vars.geoCodezip
+}]]]></http:query-params>
+		</http:request>
+						<ee:transform doc:name="Transform Message" doc:id="c73d5a76-3196-4095-9a4a-2275e85f356c">
 					<ee:message>
 						<ee:set-payload><![CDATA[%dw 2.0
 output application/json
+var outlook = if (vars.weatherResponse.weather.main[0] == "Mist") 
+               "Showers"
+               else if (vars.weatherResponse.weather.main[0] == "Clouds")
+               "Cloudy"               else vars.weatherResponse.weather.main[0]
 ---
 {
 	"userLocation": {
@@ -61,13 +80,19 @@ output application/json
 		errorCode: "-1",
 		errorMessage: "No matching office location"
 	},
-	"weather": null
-}]]></ee:set-payload>
+	"weather": {
+	    highTemperature: vars.weatherResponse.main.temp_max,
+		lowTemperature: vars.weatherResponse.main.temp_min,
+		currentTemperature: vars.weatherResponse.main.temp,
+		currentOutlook: outlook
+}}]]></ee:set-payload>
 					</ee:message>
 				</ee:transform>
-			</when>
+			
+</when>
 			<otherwise>
-				<http:request method="GET" doc:name="weather-system" doc:id="3809e53b-79de-48ce-8e75-99806b905ca2" config-ref="weatherSystem_HTTPRequestor" path="${weathersystem.path}" sendCorrelationId="ALWAYS" target="weatherResponse">
+				<logger level="INFO" doc:name="Logger" doc:id="11355ce0-a97d-4fdb-882f-a61b477c228d" message="Response from weather system api: #[vars.geocodeResponse]" />
+						<http:request method="GET" doc:name="weather-system" doc:id="3809e53b-79de-48ce-8e75-99806b905ca2" config-ref="weatherSystem_HTTPRequestor" path="${weathersystem.path}" sendCorrelationId="ALWAYS" target="weatherResponse">
 		<http:headers><![CDATA[#[output application/java
 ---
 {
@@ -80,7 +105,6 @@ output application/json
 	"postalcode" : vars.officeLocation.'Zip Code'
 }]]]></http:query-params>
 		</http:request>
-				<logger level="INFO" doc:name="Logger" doc:id="11355ce0-a97d-4fdb-882f-a61b477c228d" message="Response from weather system api: #[vars.geocodeResponse]" />
 				<ee:transform doc:name="Transform Message" doc:id="48006d6c-d0aa-4065-ab95-c33fca4f7c0c">
 			<ee:message>
 				<ee:set-payload><![CDATA[%dw 2.0
